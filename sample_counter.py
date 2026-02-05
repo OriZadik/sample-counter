@@ -7,7 +7,6 @@ st.set_page_config(page_title="Sample Counter", layout="wide")
 # -----------------------------
 # Helper functions
 # -----------------------------
-
 def default_concentration_names(n: int) -> list[str]:
     if n == 1:
         return ["High"]
@@ -31,16 +30,22 @@ def build_experiment_two_stage(
     neg_ctrl_tissue_plants_total: int,
     neg_ctrl_fruit_plants_total: int,
     # sampling rules (per plant)
-    samples_per_tissue_plant: int,  # root + leaf + end-solution (default 3)
-    samples_per_fruit_plant: int,   # fruit + end-solution (default 2)
-    # initial exposure QC samples
+    samples_per_tissue_plant: int,  # e.g., root + leaf + end-solution (default 3)
+    samples_per_fruit_plant: int,   # e.g., fruit + end-solution (default 2)
+    # initial exposure QC samples (from mixed solution BEFORE filling vessels)
     qc_initial_per_toxin_per_conc_tissue: int,  # default 3
     qc_initial_per_toxin_per_conc_fruit: int,   # default 3
-    # positive control vessels sampled at END
+    # positive control vessels sampled at END (solution + toxin, no plant)
     pos_ctrl_vessels_per_toxin_per_conc_tissue: int,  # default 3
     pos_ctrl_vessels_per_toxin_per_conc_fruit: int,   # default 3
     pos_ctrl_end_samples_per_vessel: int,             # default 1
 ) -> tuple[pd.DataFrame, dict]:
+    """
+    Counts:
+      - PlantSamples: plant-derived samples (includes 1 end-solution sample per plant IF you include it in samples_per_*_plant)
+      - InitialQCSamples: samples taken from the prepared/mixed exposure solution at START (not per vessel)
+      - PosCtrlEndSamples: end-solution samples taken from positive-control vessels at END (per vessel)
+    """
 
     rows: list[dict] = []
 
@@ -64,29 +69,31 @@ def build_experiment_two_stage(
         pos_ctrl_end_samples = int(pos_ctrl_end_samples)
 
         total_plants = tissue_plants + fruit_plants
-        plant_vessels = total_plants  # 1 vessel per plant (for that stage)
+        plant_vessels = total_plants  # 1 vessel per plant within that stage
 
         total_samples = plant_samples + initial_qc_samples + pos_ctrl_end_samples
 
-        rows.append({
-            "Experiment": experiment_name,
-            "Stage": stage,  # TISSUE_EXPOSURE / FRUIT_EXPOSURE / CONTROLS
-            "Group": group,  # TREATED / NEGATIVE_CONTROL
-            "Toxin": toxin,
-            "Concentration": conc,
-            "TissuePlants": tissue_plants,
-            "FruitPlants": fruit_plants,
-            "TotalPlants": total_plants,
-            "PlantVessels": plant_vessels,
-            "PlantSamples": plant_samples,
-            "InitialQCSamples": initial_qc_samples,
-            "PosCtrlVessels": pos_ctrl_vessels,
-            "PosCtrlEndSamples": pos_ctrl_end_samples,
-            "TotalSamples": total_samples,
-        })
+        rows.append(
+            {
+                "Experiment": experiment_name,
+                "Stage": stage,  # TISSUE_EXPOSURE / FRUIT_EXPOSURE / CONTROLS
+                "Group": group,  # TREATED / NEGATIVE_CONTROL
+                "Toxin": toxin,
+                "Concentration": conc,
+                "TissuePlants": tissue_plants,
+                "FruitPlants": fruit_plants,
+                "TotalPlants": total_plants,
+                "PlantVessels": plant_vessels,
+                "PlantSamples": plant_samples,
+                "InitialQCSamples": initial_qc_samples,
+                "PosCtrlVessels": pos_ctrl_vessels,
+                "PosCtrlEndSamples": pos_ctrl_end_samples,
+                "TotalSamples": total_samples,
+            }
+        )
 
     # -----------------------------
-    # Stage A: Tissue exposure (all selected tissue concentrations)
+    # Stage A: Tissue exposure
     # -----------------------------
     for toxin in toxins:
         for conc in concentrations_tissue:
@@ -95,10 +102,10 @@ def build_experiment_two_stage(
 
             plant_samples = tissue_plants * samples_per_tissue_plant
 
-            # QC initial samples for this toxin × this conc
+            # QC initial samples from the mixed exposure solution (START)
             initial_qc = qc_initial_per_toxin_per_conc_tissue
 
-            # Positive control vessels (solution-only) for this toxin × this conc
+            # Positive-control vessels (solution-only) sampled at END
             pos_vessels = pos_ctrl_vessels_per_toxin_per_conc_tissue
             pos_end_samples = pos_vessels * pos_ctrl_end_samples_per_vessel
 
@@ -116,9 +123,7 @@ def build_experiment_two_stage(
             )
 
     # -----------------------------
-    # Stage B: Fruit exposure (only selected fruit concentrations)
-    # fruit plants counted per toxin per concentration here.
-    # If concentrations_fruit has 1 item (e.g., High), this matches your setup.
+    # Stage B: Fruit exposure
     # -----------------------------
     if fruit_plants_per_toxin > 0 and len(concentrations_fruit) > 0:
         for toxin in toxins:
@@ -128,10 +133,10 @@ def build_experiment_two_stage(
 
                 plant_samples = fruit_plants * samples_per_fruit_plant
 
-                # QC initial samples for this toxin × this fruit conc
+                # QC initial samples from the mixed exposure solution (START)
                 initial_qc = qc_initial_per_toxin_per_conc_fruit
 
-                # Positive control vessels (solution-only) for this toxin × this fruit conc
+                # Positive-control vessels (solution-only) sampled at END
                 pos_vessels = pos_ctrl_vessels_per_toxin_per_conc_fruit
                 pos_end_samples = pos_vessels * pos_ctrl_end_samples_per_vessel
 
@@ -149,7 +154,7 @@ def build_experiment_two_stage(
                 )
 
     # -----------------------------
-    # Negative controls (single groups; no QC and no positive-control vessels)
+    # Negative controls (single groups; no initial QC and no pos-control vessels)
     # -----------------------------
     if neg_ctrl_tissue_plants_total > 0:
         plant_samples = neg_ctrl_tissue_plants_total * samples_per_tissue_plant
@@ -201,11 +206,10 @@ def build_experiment_two_stage(
 # -----------------------------
 # UI
 # -----------------------------
-
 st.title("Sample Counter")
 st.caption(
-    "Counts plant-derived samples + initial exposure QC samples + end-solution samples from positive-control vessels "
-    "(solution + toxin, no plant). Separate Tissue and Fruit exposure stages."
+    "Counts: (1) plant-derived samples, (2) initial QC samples from the mixed exposure solution before filling vessels, "
+    "and (3) end-solution samples from positive-control vessels (solution + toxin, no plant)."
 )
 
 with st.sidebar:
@@ -225,77 +229,89 @@ with st.sidebar:
         "Tissue plants per toxin × concentration",
         min_value=0,
         value=5,
-        step=1
+        step=1,
     )
 
     st.divider()
-    st.header("MAIN — Fruit exposure (per toxin, usually High only)")
+    st.header("MAIN — Fruit exposure (per toxin; usually High only)")
     fruit_plants_per_toxin = st.number_input(
-        "Fruit plants per toxin (fruit exposure stage)",
+        "Fruit plants per toxin (fruit stage)",
         min_value=0,
-        value=3,
-        step=1
+        value=5,
+        step=1,
     )
+
     fruit_concs = st.multiselect(
-        "Fruit exposure concentrations (usually High only)",
+        "Fruit exposure concentrations",
         options=concentrations,
-        default=[concentrations[-1]] if concentrations else []
+        default=[concentrations[-1]] if concentrations else [],
+        help="Usually select only 'High'. If you select both Low and High, fruit stage will be counted for both.",
     )
 
     st.divider()
     st.header("Negative Controls (totals)")
-    neg_ctrl_tissue_plants_total = st.number_input("Negative control tissue plants (total)", min_value=0, value=5, step=1)
-    neg_ctrl_fruit_plants_total = st.number_input("Negative control fruit plants (total)", min_value=0, value=5, step=1)
+    neg_ctrl_tissue_plants_total = st.number_input(
+        "Negative control tissue plants (total)",
+        min_value=0,
+        value=5,
+        step=1,
+    )
+    neg_ctrl_fruit_plants_total = st.number_input(
+        "Negative control fruit plants (total)",
+        min_value=0,
+        value=5,
+        step=1,
+    )
 
     st.divider()
     st.header("Sampling Rules (per plant)")
     samples_per_tissue_plant = st.number_input(
-        "Samples per tissue plant (root + leaf + end-solution)",
+        "Tissue plant samples (include 1 end-solution sample per plant if relevant)",
         min_value=0,
         value=3,
-        step=1
+        step=1,
     )
     samples_per_fruit_plant = st.number_input(
-        "Samples per fruit plant (fruit + end-solution)",
+        "Fruit plant samples (include 1 end-solution sample per plant if relevant)",
         min_value=0,
         value=2,
-        step=1
+        step=1,
     )
 
     st.divider()
-    st.header("Initial Exposure QC (start; from prepared exposure solution)")
+    st.header("Initial Exposure QC (START; from mixed solution)")
     qc_initial_per_toxin_per_conc_tissue = st.number_input(
-        "QC samples per toxin × concentration (tissue exposure start)",
+        "QC samples per toxin × concentration (tissue start)",
         min_value=0,
         value=3,
-        step=1
+        step=1,
     )
     qc_initial_per_toxin_per_conc_fruit = st.number_input(
-        "QC samples per toxin × concentration (fruit exposure start)",
+        "QC samples per toxin × concentration (fruit start)",
         min_value=0,
         value=3,
-        step=1
+        step=1,
     )
 
     st.divider()
-    st.header("Positive-Control Vessels (solution + toxin, no plant; sampled at end)")
+    st.header("Positive-Control Vessels (END; solution-only)")
     pos_ctrl_vessels_per_toxin_per_conc_tissue = st.number_input(
         "Pos-control vessels per toxin × concentration (tissue stage)",
         min_value=0,
         value=3,
-        step=1
+        step=1,
     )
     pos_ctrl_vessels_per_toxin_per_conc_fruit = st.number_input(
         "Pos-control vessels per toxin × concentration (fruit stage)",
         min_value=0,
         value=3,
-        step=1
+        step=1,
     )
     pos_ctrl_end_samples_per_vessel = st.number_input(
         "End-solution samples per pos-control vessel",
         min_value=0,
         value=1,
-        step=1
+        step=1,
     )
 
     st.divider()
@@ -315,7 +331,7 @@ if fruit_plants_per_toxin > 0 and not fruit_concs:
 
 
 # -----------------------------
-# Main experiment (two-stage)
+# Main experiment
 # -----------------------------
 main_df, main_totals = build_experiment_two_stage(
     experiment_name="Main",
@@ -364,7 +380,7 @@ if enable_prelim:
     pre_concentrations = st.multiselect(
         "Concentrations to include (preliminary tissue exposure)",
         options=concentrations,
-        default=[concentrations[-1]] if concentrations else []
+        default=[concentrations[-1]] if concentrations else [],
     )
 
     if not pre_concentrations:
@@ -375,44 +391,66 @@ if enable_prelim:
     with colA:
         pre_tissue_plants_per_toxin_conc = st.number_input(
             "Tissue plants per toxin × concentration (preliminary)",
-            min_value=0, value=3, step=1
+            min_value=0,
+            value=3,
+            step=1,
         )
         pre_fruit_plants_per_toxin = st.number_input(
             "Fruit plants per toxin (preliminary) — usually 0",
-            min_value=0, value=0, step=1
+            min_value=0,
+            value=0,
+            step=1,
         )
     with colB:
         pre_qc_tissue = st.number_input(
             "QC samples per toxin × concentration (preliminary tissue start)",
-            min_value=0, value=3, step=1
+            min_value=0,
+            value=3,
+            step=1,
         )
         pre_qc_fruit = st.number_input(
             "QC samples per toxin × concentration (preliminary fruit start)",
-            min_value=0, value=3, step=1
+            min_value=0,
+            value=3,
+            step=1,
         )
     with colC:
-        pre_neg_tissue = st.number_input("Negative control tissue plants (preliminary)", min_value=0, value=3, step=1)
-        pre_neg_fruit = st.number_input("Negative control fruit plants (preliminary)", min_value=0, value=0, step=1)
+        pre_neg_tissue = st.number_input(
+            "Negative control tissue plants (preliminary)",
+            min_value=0,
+            value=3,
+            step=1,
+        )
+        pre_neg_fruit = st.number_input(
+            "Negative control fruit plants (preliminary)",
+            min_value=0,
+            value=0,
+            step=1,
+        )
 
     st.divider()
-    st.caption("Preliminary positive-control vessels (solution + toxin, no plant; sampled at end).")
+    st.caption("Preliminary positive-control vessels (END; solution-only).")
     colD, colE = st.columns(2)
     with colD:
         pre_pos_ctrl_tissue = st.number_input(
             "Pos-control vessels per toxin × concentration (preliminary tissue stage)",
-            min_value=0, value=3, step=1
+            min_value=0,
+            value=3,
+            step=1,
         )
     with colE:
         pre_pos_ctrl_fruit = st.number_input(
             "Pos-control vessels per toxin × concentration (preliminary fruit stage)",
-            min_value=0, value=0, step=1
+            min_value=0,
+            value=0,
+            step=1,
         )
 
     pre_df, pre_totals = build_experiment_two_stage(
         experiment_name="Preliminary",
         toxins=toxins,
         concentrations_tissue=pre_concentrations,
-        concentrations_fruit=fruit_concs,  # usually empty for preliminary
+        concentrations_fruit=[],  # preliminary fruit stage usually not used
         tissue_plants_per_toxin_conc=int(pre_tissue_plants_per_toxin_conc),
         fruit_plants_per_toxin=int(pre_fruit_plants_per_toxin),
         neg_ctrl_tissue_plants_total=int(pre_neg_tissue),
@@ -449,8 +487,6 @@ st.divider()
 st.subheader("Combined Summary (Main + Preliminary)")
 
 combined_df = pd.concat([df for df in [main_df, pre_df] if not df.empty], ignore_index=True)
-
-# Ensure both dicts share keys (they do) and sum safely
 combined_totals = {k: int(main_totals.get(k, 0)) + int(pre_totals.get(k, 0)) for k in main_totals}
 
 c1, c2, c3, c4, c5, c6, c7, c8, c9 = st.columns(9)
